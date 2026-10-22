@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+.build-env/
+build/
+dist/
+artifacts/
+*.spec
+*.run
+*.exe
+*.zip
+*.tar.gz
+.DS_Store
+.openai/
+.env
+.env.*

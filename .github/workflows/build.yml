@@ -1,0 +1,64 @@
+name: Build applications
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: desktop/requirements-build.txt
+      - run: python -m pip install -r desktop/requirements-build.txt
+      - run: python -m unittest discover -s terminal/tests -v
+      - name: Test desktop renderer, controls and exports
+        working-directory: desktop
+        run: python -m unittest discover -s tests -v
+        env:
+          SDL_VIDEODRIVER: dummy
+          PYGAME_HIDE_SUPPORT_PROMPT: "1"
+      - name: Build desktop application
+        working-directory: desktop
+        run: python build.py
+      - name: Build terminal application
+        working-directory: terminal
+        run: python -m PyInstaller --noconfirm --clean --onefile --name DAVA_Eye_01 --distpath ../artifacts/terminal --workpath ../build/terminal --specpath ../build/terminal DAVA_KOZ_01.py
+      - name: Smoke test Linux applications
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cp artifacts/terminal/DAVA_Eye_01 artifacts/terminal/DAVA_Eye_01.run
+          chmod +x artifacts/terminal/DAVA_Eye_01.run desktop/dist/DAVA_Space_Studio.run
+          ./artifacts/terminal/DAVA_Eye_01.run --snapshot --no-color --size 80x24 > artifacts/terminal/snapshot.txt
+          ./desktop/dist/DAVA_Space_Studio.run --headless --fresh --frames 3 --screenshot desktop-build-smoke.png
+      - name: Smoke test Windows applications
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & ./artifacts/terminal/DAVA_Eye_01.exe --snapshot --no-color --size 80x24 | Out-File artifacts/terminal/snapshot.txt
+          if ($LASTEXITCODE -ne 0) { throw "Terminal application failed" }
+          $process = Start-Process -FilePath "desktop/dist/DAVA_Space_Studio.exe" -ArgumentList "--headless --fresh --frames 3 --screenshot desktop-build-smoke.png" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Desktop application failed: $($process.ExitCode)" }
+          if (!(Test-Path desktop-build-smoke.png)) { throw "Desktop screenshot missing" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DAVA-Applications-${{ runner.os }}-x64
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.run
+            artifacts/terminal/*.exe
+            artifacts/terminal/*.run
+            artifacts/terminal/snapshot.txt
+            desktop-build-smoke.png
+          if-no-files-found: error
